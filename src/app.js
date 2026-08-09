@@ -206,6 +206,8 @@ const layoutSizes = { settings: 260, history: 250 };
 
 function applyLayoutSizes() {
   const workspace = $('workspace');
+  layoutSizes.settings = Math.max(200, Math.min(420, Number(layoutSizes.settings) || 260));
+  layoutSizes.history = Math.max(240, Math.min(360, Number(layoutSizes.history) || 280));
   workspace.style.setProperty('--settings-width', `${layoutSizes.settings}px`);
   workspace.style.setProperty('--history-width', `${layoutSizes.history}px`);
 }
@@ -215,7 +217,7 @@ function persistLayoutSizes() {
 }
 
 function resizePanel(key, delta) {
-  const bounds = { settings: [200, 420], history: [200, 360] }[key];
+  const bounds = { settings: [200, 420], history: [240, 360] }[key];
   layoutSizes[key] = Math.round(Math.max(bounds[0], Math.min(bounds[1], layoutSizes[key] + delta)));
   applyLayoutSizes();
 }
