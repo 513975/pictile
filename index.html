@@ -13,8 +13,6 @@
     <header class="app-header">
       <a class="brand" href="/">Pictile</a><span>图片拼图工作台</span>
       <div class="mobile-actions" hidden>
-        <sl-tooltip content="设置"><sl-icon-button id="open-settings" name="sliders" label="打开设置"></sl-icon-button></sl-tooltip>
-        <sl-tooltip content="实时预览"><sl-icon-button id="open-preview" name="eye" label="打开实时预览"></sl-icon-button></sl-tooltip>
         <sl-tooltip content="历史版本"><sl-icon-button id="open-history" name="clock-history" label="打开历史版本"></sl-icon-button></sl-tooltip>
       </div>
     </header>
@@ -46,18 +44,15 @@
           <sl-switch id="gridlines-input" checked>显示网格线</sl-switch>
           <sl-button id="export-button"><sl-icon slot="prefix" name="download"></sl-icon>导出 PNG</sl-button>
         </aside>
+        <aside id="preview-content" class="panel preview-panel"><h2>实时对比</h2><div class="live-preview"><span>裁切原图</span><img id="live-original" alt="裁切后的原图预览" /><span>网格结果</span><img id="live-grid" alt="网格填色结果预览" /></div></aside>
         <section class="canvas-panel">
           <div class="canvas-toolbar"><sl-button-group label="编辑历史"><sl-tooltip content="撤销 Ctrl+Z"><sl-icon-button id="undo-button" name="arrow-counterclockwise" label="撤销"></sl-icon-button></sl-tooltip><sl-tooltip content="重做 Ctrl+Y"><sl-icon-button id="redo-button" name="arrow-clockwise" label="重做"></sl-icon-button></sl-tooltip></sl-button-group><sl-range id="zoom-input" label="缩放" min="8" max="48" value="22" tooltip="top"></sl-range></div>
           <div class="canvas-scroll"><canvas id="grid-canvas"></canvas></div><p id="workspace-status" class="status" aria-live="polite"></p>
         </section>
         <aside id="history-content" class="panel history-panel"><div class="panel-heading"><h2>历史版本</h2><sl-button id="save-version-button" size="small">保存</sl-button></div><ol id="history-list"></ol></aside>
-        <aside id="preview-content" class="panel preview-panel"><h2>实时对比</h2><div class="live-preview"><span>裁切原图</span><img id="live-original" alt="裁切后的原图预览" /><span>网格结果</span><img id="live-grid" alt="网格填色结果预览" /></div><sl-button id="compare-button" size="small">查看大图对比</sl-button></aside>
       </section>
     </main>
     <sl-dialog id="crop-dialog" label="裁切原图"><div class="crop-presets"><sl-button-group label="裁切比例"><sl-button class="crop-preset" data-ratio="free">自由</sl-button><sl-button class="crop-preset" data-ratio="square">正方形</sl-button><sl-button class="crop-preset" data-ratio="4:3">4:3</sl-button><sl-button class="crop-preset" data-ratio="16:9">16:9</sl-button></sl-button-group></div><canvas id="crop-canvas" width="640" height="420"></canvas><p>拖动裁切框移动，拖动边缘或角点调整大小。</p><sl-button slot="footer" id="cancel-crop-button">取消</sl-button><sl-button slot="footer" id="apply-crop-button" variant="primary">应用裁切</sl-button></sl-dialog>
-    <sl-dialog id="compare-dialog" label="对比预览"><div class="compare-grid"><figure><img id="compare-original" alt="裁切后的原图" /><figcaption>裁切后的原图</figcaption></figure><figure><img id="compare-grid" alt="网格填色结果" /><figcaption>网格填色结果</figcaption></figure></div><sl-button slot="footer" variant="primary" data-close-dialog>关闭</sl-button></sl-dialog>
-    <sl-drawer id="settings-drawer" label="拼图设置" placement="start"></sl-drawer>
-    <sl-drawer id="preview-drawer" label="实时预览" placement="end"></sl-drawer>
     <sl-drawer id="history-drawer" label="历史版本" placement="end"></sl-drawer>
     <script type="module" src="/node_modules/@shoelace-style/shoelace/cdn/shoelace-autoloader.js"></script>
     <script type="module" src="src/app.js"></script>

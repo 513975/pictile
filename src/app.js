@@ -63,8 +63,6 @@ function updateLivePreview() {
   const grid = view.exportPng(state.grid, $('gridlines-input').checked);
   $('live-original').src = original;
   $('live-grid').src = grid;
-  $('compare-original').src = original;
-  $('compare-grid').src = grid;
 }
 
 async function saveVersion(label) {
@@ -239,9 +237,6 @@ $('crop-canvas').onpointerup = () => { cropDrag = null; };
 $('zoom-input').addEventListener('sl-input', redraw);
 $('gridlines-input').addEventListener('sl-change', redraw);
 $('save-version-button').onclick = () => saveVersion('手动保存').catch((error) => setStatus(error.message, true));
-$('compare-button').onclick = () => $('compare-dialog').show();
-document.querySelector('[data-close-dialog]').onclick = () => $('compare-dialog').hide();
-
 $('hue-input').oninput = () => { const { saturation, brightness } = hexToHsb($('color-input').value); updateColorUi(hsbToHex(Number($('hue-input').value), saturation, brightness)); };
 $('color-input').addEventListener('sl-change', () => updateColorUi($('color-input').value));
 $('color-square').onpointerdown = (event) => { $('color-square').setPointerCapture(event.pointerId); setColorFromPicker(event); };
@@ -266,6 +261,4 @@ $('redo-button').onclick = () => { state.grid.cells = state.history.redo(); redr
 $('export-button').onclick = () => { const link = document.createElement('a'); link.href = view.exportPng(state.grid, $('gridlines-input').checked); link.download = `${state.source.name.replace(/\.[^.]+$/, '')}-puzzle.png`; link.click(); };
 document.addEventListener('keydown', (event) => { if (!event.ctrlKey || event.target.closest('sl-input, sl-select')) return; const key = event.key.toLowerCase(); if (key === 'z') { event.preventDefault(); state.grid.cells = event.shiftKey ? state.history.redo() : state.history.undo(); redraw(); } if (key === 'y') { event.preventDefault(); state.grid.cells = state.history.redo(); redraw(); } });
 
-$('open-settings').onclick = () => openDrawer('settings-drawer', 'settings-content');
-$('open-preview').onclick = () => openDrawer('preview-drawer', 'preview-content');
 $('open-history').onclick = () => openDrawer('history-drawer', 'history-content');
