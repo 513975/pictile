@@ -201,6 +201,54 @@ function openDrawer(drawerId, contentId) {
   drawer.addEventListener('sl-after-hide', () => placeholder.replaceWith(content), { once: true });
 }
 
+const layoutKey = 'pictile-layout-widths';
+const layoutSizes = { settings: 260, history: 250, preview: 220 };
+
+function applyLayoutSizes() {
+  const workspace = $('workspace');
+  workspace.style.setProperty('--settings-width', `${layoutSizes.settings}px`);
+  workspace.style.setProperty('--history-width', `${layoutSizes.history}px`);
+  workspace.style.setProperty('--preview-width', `${layoutSizes.preview}px`);
+}
+
+function persistLayoutSizes() {
+  localStorage.setItem(layoutKey, JSON.stringify(layoutSizes));
+}
+
+function resizePanel(key, delta) {
+  const bounds = { settings: [200, 420], history: [200, 360], preview: [180, 320] }[key];
+  layoutSizes[key] = Math.round(Math.max(bounds[0], Math.min(bounds[1], layoutSizes[key] + delta)));
+  applyLayoutSizes();
+}
+
+function setupResizablePanels() {
+  try { Object.assign(layoutSizes, JSON.parse(localStorage.getItem(layoutKey) || '{}')); } catch { /* Use the defaults. */ }
+  applyLayoutSizes();
+  const splitters = [
+    ['settings-resize', 'settings', 1],
+    ['history-resize', 'history', -1],
+    ['preview-resize', 'preview', -1],
+  ];
+  for (const [id, key, direction] of splitters) {
+    const handle = $(id);
+    handle.addEventListener('pointerdown', (event) => {
+      if (matchMedia('(max-width: 1100px)').matches) return;
+      const startX = event.clientX; const initial = layoutSizes[key];
+      handle.setPointerCapture(event.pointerId);
+      const move = (moveEvent) => { layoutSizes[key] = initial; resizePanel(key, (moveEvent.clientX - startX) * direction); };
+      const finish = () => { handle.removeEventListener('pointermove', move); persistLayoutSizes(); };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', finish, { once: true });
+      handle.addEventListener('pointercancel', finish, { once: true });
+    });
+    handle.addEventListener('keydown', (event) => {
+      const amount = event.shiftKey ? 40 : 16;
+      if (event.key === 'ArrowLeft') { event.preventDefault(); resizePanel(key, -amount * direction); persistLayoutSizes(); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); resizePanel(key, amount * direction); persistLayoutSizes(); }
+    });
+  }
+}
+
 $('image-input').addEventListener('change', async (event) => {
   try {
     const file = event.target.files[0]; if (!file) return;
@@ -242,6 +290,7 @@ $('color-input').addEventListener('sl-change', () => updateColorUi($('color-inpu
 $('color-square').onpointerdown = (event) => { $('color-square').setPointerCapture(event.pointerId); setColorFromPicker(event); };
 $('color-square').onpointermove = (event) => { if (event.buttons) setColorFromPicker(event); };
 buildPalette(); updateColorUi();
+setupResizablePanels();
 
 $('grid-canvas').onpointerdown = (event) => {
   const index = view.hitTest(event); if (index === null) return;
