@@ -1,0 +1,6 @@
+const DATABASE_NAME='pictile';const DATABASE_VERSION=1;
+export function openStore(){return new Promise((resolve,reject)=>{const request=indexedDB.open(DATABASE_NAME,DATABASE_VERSION);request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('projects'))db.createObjectStore('projects',{keyPath:'id'});if(!db.objectStoreNames.contains('versions')){const versions=db.createObjectStore('versions',{keyPath:'id'});versions.createIndex('projectId','projectId')}};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}
+export function putVersion(db,version){return requestResult(db.transaction('versions','readwrite').objectStore('versions').put(version),version)}
+export function listVersions(db,projectId){return requestResult(db.transaction('versions').objectStore('versions').index('projectId').getAll(projectId)).then((items)=>items.sort((a,b)=>b.createdAt-a.createdAt))}
+export function deleteVersion(db,id){return requestResult(db.transaction('versions','readwrite').objectStore('versions').delete(id))}
+function requestResult(request,value){return new Promise((resolve,reject)=>{request.onsuccess=()=>resolve(value??request.result);request.onerror=()=>reject(request.error)})}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pictile - 图片拼图</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header"><a class="brand" href="/">Pictile</a><span>图片拼图工作台</span></header>
+    <main>
+      <section id="upload-screen" class="upload-screen" aria-labelledby="upload-title">
+        <p class="eyebrow">本地处理</p><h1 id="upload-title">把图片变成色块拼图</h1>
+        <label class="upload-dropzone" for="image-input"><strong>选择图片</strong><span>JPG、PNG 或 WebP</span></label>
+        <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+        <p id="upload-error" class="status error" hidden></p>
+      </section>
+      <section id="workspace" class="workspace" hidden>
+        <aside class="panel controls-panel"><h2>拼图设置</h2>
+          <label>行数<input id="rows-input" type="number" min="2" max="120" value="24" /></label>
+          <label>列数<input id="cols-input" type="number" min="2" max="120" value="24" /></label>
+          <label>取色方式<select id="sampling-input"><option value="average">平均色</option><option value="dominant">主色</option></select></label>
+          <label class="switch"><input id="detail-input" type="checkbox" checked />细节优先</label>
+          <button id="regenerate-button" type="button">重新生成</button><hr />
+          <label>当前颜色<input id="color-input" type="color" value="#e45a4f" /></label>
+          <label class="switch"><input id="gridlines-input" type="checkbox" checked />显示网格线</label>
+          <button id="export-button" type="button">导出 PNG</button>
+        </aside>
+        <section class="canvas-panel"><div class="canvas-toolbar"><div><button id="undo-button" type="button" title="撤销 (Ctrl+Z)">↶</button><button id="redo-button" type="button" title="重做 (Ctrl+Y)">↷</button></div><label>缩放 <input id="zoom-input" type="range" min="8" max="48" value="22" /></label></div><div class="canvas-scroll"><canvas id="grid-canvas"></canvas></div><p id="workspace-status" class="status" aria-live="polite"></p></section>
+        <aside class="panel history-panel"><div class="panel-heading"><h2>历史版本</h2><button id="save-version-button" type="button">保存</button></div><ol id="history-list"></ol></aside>
+      </section>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
