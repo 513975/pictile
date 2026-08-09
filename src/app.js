@@ -202,13 +202,12 @@ function openDrawer(drawerId, contentId) {
 }
 
 const layoutKey = 'pictile-layout-widths';
-const layoutSizes = { settings: 260, history: 250, preview: 220 };
+const layoutSizes = { settings: 260, history: 250 };
 
 function applyLayoutSizes() {
   const workspace = $('workspace');
   workspace.style.setProperty('--settings-width', `${layoutSizes.settings}px`);
   workspace.style.setProperty('--history-width', `${layoutSizes.history}px`);
-  workspace.style.setProperty('--preview-width', `${layoutSizes.preview}px`);
 }
 
 function persistLayoutSizes() {
@@ -216,7 +215,7 @@ function persistLayoutSizes() {
 }
 
 function resizePanel(key, delta) {
-  const bounds = { settings: [200, 420], history: [200, 360], preview: [180, 320] }[key];
+  const bounds = { settings: [200, 420], history: [200, 360] }[key];
   layoutSizes[key] = Math.round(Math.max(bounds[0], Math.min(bounds[1], layoutSizes[key] + delta)));
   applyLayoutSizes();
 }
@@ -227,7 +226,6 @@ function setupResizablePanels() {
   const splitters = [
     ['settings-resize', 'settings', 1],
     ['history-resize', 'history', -1],
-    ['preview-resize', 'preview', -1],
   ];
   for (const [id, key, direction] of splitters) {
     const handle = $(id);
