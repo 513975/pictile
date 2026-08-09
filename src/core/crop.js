@@ -3,12 +3,12 @@ const normalize = (value) => Math.round(value * 1_000_000) / 1_000_000;
 
 const ratioValue = (ratio) => ({ square: 1, '4:3': 4 / 3, '16:9': 16 / 9 }[ratio] ?? null);
 
-export function constrainCrop(crop, ratio = 'free') {
+export function constrainCrop(crop, ratio = 'free', sourceAspect = 1) {
   const x = clamp(crop.x ?? 0, 0, 1);
   const y = clamp(crop.y ?? 0, 0, 1);
   let width = clamp(crop.width ?? 1, 0.001, 1 - x);
   let height = clamp(crop.height ?? 1, 0.001, 1 - y);
-  const target = ratioValue(ratio);
+  const target = ratioValue(ratio) ? ratioValue(ratio) / sourceAspect : null;
 
   if (target) {
     const maximumWidth = Math.min(1 - x, (1 - y) * target);

@@ -25,7 +25,7 @@ export class EditHistory {
   }
 
   applyStroke(changes) {
-    const effective = changes.filter((change) => this.cells[change.index] !== change.after);
+    const effective = changes.filter((change) => change.before !== change.after);
     if (effective.length === 0) return this.cells;
     for (const change of effective) this.cells[change.index] = change.after;
     this.undoStack.push({ type: 'stroke', changes: effective });
