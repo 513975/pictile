@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pictile - 图片拼图</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="ui-refresh.css" />
+    <link rel="stylesheet" href="node_modules/@shoelace-style/shoelace/dist/themes/light.css" />
+    <style>.live-preview{display:grid;gap:5px;font-size:12px;font-weight:600}.live-preview img{width:100%;aspect-ratio:1/1;object-fit:contain;background:#e8edf1;border:1px solid #cbd6df}.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:900px}.compare-grid figure{margin:0}.compare-grid img{display:block;width:100%;max-height:65vh;object-fit:contain;background:#e8edf1}.compare-grid figcaption{text-align:center;margin-top:7px}@media(max-width:650px){.compare-grid{grid-template-columns:1fr}}</style>
   </head>
   <body>
     <header class="app-header"><a class="brand" href="/">Pictile</a><span>图片拼图工作台</span></header>
@@ -16,13 +19,14 @@
         <p id="upload-error" class="status error" hidden></p>
       </section>
       <section id="workspace" class="workspace" hidden>
-        <aside class="panel controls-panel"><h2>拼图设置</h2>
+        <aside class="panel controls-panel"><h2>实时对比</h2><div class="live-preview"><span>裁切原图</span><img id="live-original" alt="裁切后的原图预览" /><span>网格结果</span><img id="live-grid" alt="网格填色结果预览" /></div><h2>拼图设置</h2>
           <label>行数<input id="rows-input" type="number" min="2" max="120" value="24" /></label>
           <label>列数<input id="cols-input" type="number" min="2" max="120" value="24" /></label>
           <label>取色方式<select id="sampling-input"><option value="average">平均色</option><option value="dominant">主色</option></select></label>
           <label class="switch"><input id="detail-input" type="checkbox" checked />细节优先</label>
-          <button id="regenerate-button" type="button">重新生成</button><hr />
+          <button id="regenerate-button" type="button">重新生成</button><button id="crop-button" type="button">裁切原图</button><hr />
           <label>当前颜色<input id="color-input" type="color" value="#e45a4f" /></label>
+          <label>编辑模式<select id="edit-mode"><option value="fill">填充</option><option value="select">选择</option><option value="eyedropper">吸管</option></select></label>
           <label class="switch"><input id="gridlines-input" type="checkbox" checked />显示网格线</label>
           <button id="export-button" type="button">导出 PNG</button>
         </aside>
@@ -30,6 +34,19 @@
         <aside class="panel history-panel"><div class="panel-heading"><h2>历史版本</h2><button id="save-version-button" type="button">保存</button></div><ol id="history-list"></ol></aside>
       </section>
     </main>
+    <dialog id="crop-dialog"><form method="dialog"><h2>裁切原图</h2><canvas id="crop-canvas" width="640" height="420"></canvas><p>拖动框内移动，拖动右下角调整大小。</p><button value="cancel">取消</button><button id="apply-crop-button" value="default">应用裁切</button></form></dialog>
+    <dialog id="compare-dialog"><form method="dialog"><h2>对比预览</h2><div class="compare-grid"><figure><img id="compare-original" alt="裁切后的原图" /><figcaption>裁切后的原图</figcaption></figure><figure><img id="compare-grid" alt="网格填色结果" /><figcaption>网格填色结果</figcaption></figure></div><button value="close">关闭</button></form></dialog>
+    <script type="module">
+      import './node_modules/@shoelace-style/shoelace/dist/components/button/button.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/input/input.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/select/select.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/switch/switch.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/drawer/drawer.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/range/range.js';
+      import './node_modules/@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
+    </script>
     <script type="module" src="src/app.js"></script>
   </body>
 </html>

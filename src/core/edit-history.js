@@ -24,11 +24,21 @@ export class EditHistory {
     return this.cells;
   }
 
+  applyStroke(changes) {
+    const effective = changes.filter((change) => this.cells[change.index] !== change.after);
+    if (effective.length === 0) return this.cells;
+    for (const change of effective) this.cells[change.index] = change.after;
+    this.undoStack.push({ type: 'stroke', changes: effective });
+    this.redoStack = [];
+    return this.cells;
+  }
+
   undo() {
     const change = this.undoStack.pop();
     if (!change) return this.cells;
 
-    this.cells[change.index] = change.before;
+    if (change.type === 'stroke') for (const item of change.changes) this.cells[item.index] = item.before;
+    else this.cells[change.index] = change.before;
     this.redoStack.push(change);
     return this.cells;
   }
@@ -37,7 +47,8 @@ export class EditHistory {
     const change = this.redoStack.pop();
     if (!change) return this.cells;
 
-    this.cells[change.index] = change.after;
+    if (change.type === 'stroke') for (const item of change.changes) this.cells[item.index] = item.after;
+    else this.cells[change.index] = change.after;
     this.undoStack.push(change);
     return this.cells;
   }
