@@ -284,6 +284,14 @@ $('crop-canvas').onpointerup = () => { cropDrag = null; };
 
 $('zoom-input').addEventListener('sl-input', redraw);
 $('gridlines-input').addEventListener('sl-change', redraw);
+$('grid-canvas').addEventListener('wheel', (event) => {
+  event.preventDefault();
+  const zoom = $('zoom-input');
+  const next = Math.max(Number(zoom.min), Math.min(Number(zoom.max), Number(zoom.value) + (event.deltaY < 0 ? 1 : -1)));
+  if (next === Number(zoom.value)) return;
+  zoom.value = next;
+  redraw();
+}, { passive: false });
 $('save-version-button').onclick = () => saveVersion('手动保存').catch((error) => setStatus(error.message, true));
 $('hue-input').oninput = () => { const { saturation, brightness } = hexToHsb($('color-input').value); updateColorUi(hsbToHex(Number($('hue-input').value), saturation, brightness)); };
 $('color-input').addEventListener('sl-change', () => updateColorUi($('color-input').value));
