@@ -1,7 +1,7 @@
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 const normalize = (value) => Math.round(value * 1_000_000) / 1_000_000;
 
-const ratioValue = (ratio) => ({ square: 1, '4:3': 4 / 3, '16:9': 16 / 9 }[ratio] ?? null);
+const ratioValue = (ratio) => typeof ratio === 'number' ? ratio : ({ square: 1, '4:3': 4 / 3, '16:9': 16 / 9 }[ratio] ?? null);
 
 export function constrainCrop(crop, ratio = 'free', sourceAspect = 1) {
   const x = clamp(crop.x ?? 0, 0, 1);
