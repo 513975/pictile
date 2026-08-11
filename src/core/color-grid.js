@@ -35,6 +35,23 @@ function getDominantColor(buckets) {
 }
 
 function sampleCell(data, width, bounds, mode, detailPriority) {
+  if (mode === 'direct') {
+    const regionWidth = Math.max(1, Math.floor((bounds.right - bounds.left) / 3));
+    const regionHeight = Math.max(1, Math.floor((bounds.bottom - bounds.top) / 3));
+    const left = Math.floor((bounds.left + bounds.right - regionWidth) / 2);
+    const top = Math.floor((bounds.top + bounds.bottom - regionHeight) / 2);
+    const channels = [[], [], []];
+    for (let y = top; y < top + regionHeight; y += 1) {
+      for (let x = left; x < left + regionWidth; x += 1) {
+        const [red, green, blue, alpha] = getPixel(data, width, x, y); if (alpha === 0) continue;
+        channels[0].push(red); channels[1].push(green); channels[2].push(blue);
+      }
+    }
+    if (!channels[0].length) return '#ffffff';
+    const median = (values) => { values.sort((first, second) => first - second); return values[Math.floor(values.length / 2)]; };
+    return toColor(median(channels[0]), median(channels[1]), median(channels[2]));
+  }
+
   const totals = [0, 0, 0];
   const buckets = new Map();
   let pixelCount = 0;
@@ -364,6 +381,55 @@ export function imageDataToGrid(data, width, height, rows, columns, mode = 'aver
     }
   }
 
+  return { rows, cols: columns, cells };
+}
+
+function luminance(data, offset) {
+  return 0.2126 * data[offset] + 0.7152 * data[offset + 1] + 0.0722 * data[offset + 2];
+}
+
+function lineThreshold(data) {
+  const histogram = new Uint32Array(256); let total = 0; let sum = 0;
+  for (let offset = 0; offset < data.length; offset += 4) {
+    if (data[offset + 3] === 0) continue;
+    const value = Math.round(luminance(data, offset)); histogram[value] += 1; total += 1; sum += value;
+  }
+  let backgroundWeight = 0; let backgroundSum = 0; let bestThreshold = 128; let bestVariance = -1;
+  for (let value = 0; value < 256; value += 1) {
+    backgroundWeight += histogram[value]; if (!backgroundWeight) continue;
+    const foregroundWeight = total - backgroundWeight; if (!foregroundWeight) break;
+    backgroundSum += value * histogram[value];
+    const backgroundMean = backgroundSum / backgroundWeight; const foregroundMean = (sum - backgroundSum) / foregroundWeight;
+    const variance = backgroundWeight * foregroundWeight * (backgroundMean - foregroundMean) ** 2;
+    if (variance > bestVariance) { bestVariance = variance; bestThreshold = value; }
+  }
+  return Math.max(96, Math.min(210, bestThreshold + 24));
+}
+
+export function imageDataToLineGrid(data, width, height, rows, columns) {
+  if (!Number.isInteger(rows) || !Number.isInteger(columns) || rows < 1 || columns < 1) throw new RangeError('Grid dimensions must be positive integers.');
+  const threshold = lineThreshold(data); const cells = [];
+  const tones = [
+    { darkness: 0, color: '#ffffff' },
+    { darkness: 0.09, color: '#eae7df' },
+    { darkness: 0.29, color: '#b4b4b4' },
+    { darkness: 0.87, color: '#222222' },
+  ];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const bounds = getCellBounds(width, height, rows, columns, row, column); let dark = 0; let count = 0;
+      for (let y = bounds.top; y < bounds.bottom; y += 1) {
+        for (let x = bounds.left; x < bounds.right; x += 1) {
+          const offset = (y * width + x) * 4; if (data[offset + 3] === 0) continue;
+          if (luminance(data, offset) <= threshold) dark += 1; count += 1;
+        }
+      }
+      const coverage = dark / Math.max(1, count);
+      const targetDarkness = Math.min(1, coverage * 4);
+      const tone = tones.reduce((closest, candidate) => Math.abs(candidate.darkness - targetDarkness) < Math.abs(closest.darkness - targetDarkness) ? candidate : closest);
+      cells.push(tone.color);
+    }
+  }
   return { rows, cols: columns, cells };
 }
 

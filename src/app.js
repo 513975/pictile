@@ -1,4 +1,4 @@
-import { createGridPalette, imageDataToGrid, mapGridToPalette, simplifyGrid } from './core/color-grid.js';
+import { createGridPalette, imageDataToGrid, imageDataToLineGrid, mapGridToPalette, simplifyGrid } from './core/color-grid.js';
 import { EditHistory } from './core/edit-history.js';
 import { GridCanvas } from './ui/grid-canvas.js';
 import { constrainCrop, cropImageData } from './core/crop.js';
@@ -23,6 +23,7 @@ const state = {
   selected: null,
   palette: QUICK_PALETTE.map(hexToRgb),
   paletteSelection: null,
+  disabledFixedColors: new Set(),
   crop: { x: 0, y: 0, width: 1, height: 1, ratio: 'free' },
 };
 const view = new GridCanvas($('grid-canvas'));
@@ -31,6 +32,8 @@ let stroke = null;
 let cropDrag = null;
 let cropBounds = null;
 let cropBeforeDialog = null;
+let canvasPan = null;
+let spacePressed = false;
 
 function setStatus(message, error = false) {
   $('workspace-status').textContent = message;
@@ -65,7 +68,7 @@ function getOptions() {
     cols: Number($('cols-input').value),
     mode: $('sampling-input').value,
     detail: $('detail-input').checked,
-    paletteColors: $('palette-colors-input').value,
+    paletteColors: $('palette-colors-input').value === 'custom' ? $('palette-colors-custom').value : $('palette-colors-input').value,
     brightness: $('brightness-input').value,
     contrast: $('contrast-input').value,
     saturation: $('saturation-input').value,
@@ -82,13 +85,26 @@ function getOptions() {
 function resolvePaletteSize(value, rows, cols, simplify = 'none') {
   const cells = rows * cols;
   const automatic = cells <= 100 ? 8 : cells <= 256 ? 12 : cells <= 576 ? 16 : cells <= 1024 ? 24 : cells <= 2304 ? 32 : cells <= 4096 ? 48 : 64;
-  const requested = value === 'auto' ? automatic : Number(value);
+  const parsed = Number.parseInt(value, 10);
+  const requested = value === 'auto' || value === 'original' || !Number.isFinite(parsed) ? automatic : Math.max(2, Math.min(64, parsed));
   return Math.min(requested, { light: 24, medium: 16, strong: 12 }[simplify] ?? 64);
 }
 
 function getBoardMode() { return document.querySelector('input[name="board-mode"]:checked')?.value ?? 'free'; }
 
 function getEditMode() { return document.querySelector('input[name="edit-mode"]:checked')?.value ?? 'fill'; }
+
+function enabledFixedPalette() {
+  return FIXED_40_PALETTE.filter((color) => !state.disabledFixedColors.has(color));
+}
+
+function selectUsedPalette(grid, palette, colorCount, distance = 'weighted-rgb') {
+  if (palette.length <= colorCount) return palette;
+  const mapped = mapGridToPalette(grid, palette.map(hexToRgb), distance); const counts = new Map();
+  for (const color of mapped.cells) counts.set(color, (counts.get(color) ?? 0) + 1);
+  const selected = [...counts.entries()].sort((first, second) => second[1] - first[1]).slice(0, colorCount).map(([color]) => color);
+  return selected.length ? selected : [palette[0]];
+}
 
 function currentPalette() {
   return getBoardMode() === 'fixed40'
@@ -100,17 +116,19 @@ function updateWorkspaceLabels() {
   const fixed = getBoardMode() === 'fixed40';
   const palette = currentPalette();
   $('palette-title').textContent = fixed ? '固定 40 色' : state.source ? '图像色板' : '自由色板';
-  $('palette-count').textContent = `${palette.length} 色`;
+  $('palette-count').textContent = fixed ? `${enabledFixedPalette().length}/40 可用` : `${palette.length} 色`;
   $('palette-description').textContent = fixed
     ? '来自参考色板的 40 个锁定颜色，适合稳定、清晰的像素图。'
     : state.source ? '从图片中提取的实际用色，可选中后继续微调。' : '从当前颜色开始绘制，也可从下方快捷色中选取。';
   $('canvas-mode-label').textContent = fixed ? '固定 40 色绘制' : state.source ? '图像生成后编辑' : '自由绘制';
   $('project-meta').textContent = state.grid ? `${state.grid.rows} × ${state.grid.cols} 网格` : '空白画板';
-  $('update-palette-button').hidden = fixed;
   $('palette').hidden = fixed;
+  $('free-palette-controls').hidden = fixed;
+  $('fixed-palette-controls').hidden = !fixed;
+  $('selected-color-label').textContent = !fixed && $('palette-edit-input').checked && state.paletteSelection !== null ? `正在编辑色板 ${state.paletteSelection + 1}` : '当前绘制颜色';
   $('color-input').disabled = fixed;
-  $('hue-input').disabled = fixed;
-  $('color-square').classList.toggle('is-locked', fixed);
+  $('hue-input').hidden = fixed;
+  $('color-square').hidden = fixed;
 }
 
 function renderImagePalette(nextPalette) {
@@ -119,19 +137,36 @@ function renderImagePalette(nextPalette) {
     state.paletteSelection = null;
   }
   const fixed = getBoardMode() === 'fixed40';
+  const managing = fixed && $('palette-manage-input').checked;
+  const editing = !fixed && $('palette-edit-input').checked;
   const palette = currentPalette();
   $('image-palette').replaceChildren(...palette.map((rgb, index) => {
     const color = rgbToHex(rgb);
+    const disabled = fixed && state.disabledFixedColors.has(color);
+    const current = color === getColorInputValue().toLowerCase();
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `palette-swatch${state.paletteSelection === index ? ' is-selected' : ''}${fixed ? ' is-locked' : ''}`;
+    button.className = `palette-swatch${current ? ' is-current' : ''}${state.paletteSelection === index ? ' is-selected' : ''}${fixed ? ' is-locked' : ''}${disabled ? ' is-disabled' : ''}${managing ? ' is-managing' : ''}${editing ? ' is-editing' : ''}`;
     button.style.backgroundColor = color;
-    button.title = fixed ? `${color}（固定颜色）` : color;
+    button.dataset.color = color;
+    button.title = fixed ? `${color}（${disabled ? '已禁用' : '可使用'}）` : color;
     button.setAttribute('aria-label', `使用 ${color}`);
+    button.setAttribute('aria-current', current ? 'true' : 'false');
+    button.setAttribute('aria-pressed', String(disabled));
     button.onclick = () => {
-      state.paletteSelection = index;
+      if (fixed && managing) {
+        if (disabled) state.disabledFixedColors.delete(color);
+        else if (enabledFixedPalette().length > 1) state.disabledFixedColors.add(color);
+        else { setStatus('固定色板至少需要保留一种可用颜色。', true); return; }
+        state.paletteSelection = null;
+        if (state.disabledFixedColors.has(getColorInputValue().toLowerCase())) updateColorUi(enabledFixedPalette()[0]);
+        renderImagePalette(); if (state.source) scheduleRegenerate(); return;
+      }
+      if (disabled) return;
+      state.paletteSelection = editing ? index : null;
       updateColorUi(color);
       renderImagePalette();
+      if (getEditMode() === 'eyedropper') setEditMode('fill');
     };
     return button;
   }));
@@ -144,9 +179,10 @@ function buildQuickPalette() {
     button.type = 'button';
     button.className = 'palette-swatch';
     button.style.backgroundColor = color;
+    button.dataset.color = color;
     button.title = color;
     button.setAttribute('aria-label', `使用 ${color}`);
-    button.onclick = () => { state.paletteSelection = null; updateColorUi(color); renderImagePalette(); };
+    button.onclick = () => { updateColorUi(color); if ($('palette-edit-input').checked && state.paletteSelection !== null) updateSelectedPaletteColor(); else { state.paletteSelection = null; renderImagePalette(); } if (getEditMode() === 'eyedropper') setEditMode('fill'); };
     return button;
   }));
 }
@@ -176,7 +212,14 @@ function updateColorUi(color = getColorInputValue()) {
   $('color-square-handle').style.left = `${saturation * 100}%`;
   $('color-square-handle').style.top = `${(1 - brightness) * 100}%`;
   $('color-swatch').style.backgroundColor = normalized;
-  $('update-palette-button').disabled = state.paletteSelection === null || getBoardMode() === 'fixed40';
+  $('hue-input').style.setProperty('--hue-color', `hsl(${hue} 100% 50%)`);
+  $('hue-color-indicator').style.backgroundColor = `hsl(${hue} 100% 50%)`;
+  $('hue-value').value = `${hue}° · ${normalized.toUpperCase()}`;
+  document.querySelectorAll('.palette-swatch').forEach((swatch) => {
+    const current = swatch.dataset.color === normalized;
+    swatch.classList.toggle('is-current', current);
+    swatch.setAttribute('aria-current', current ? 'true' : 'false');
+  });
 }
 
 function setColorFromPicker(event) {
@@ -202,7 +245,7 @@ async function decodeImage(file) {
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
   const context = canvas.getContext('2d', { willReadFrequently: true }); context.drawImage(bitmap, 0, 0);
-  return { name: file.name, bitmap, width: bitmap.width, height: bitmap.height, data: context.getImageData(0, 0, bitmap.width, bitmap.height).data };
+  return { name: file.name, bitmap, width: bitmap.width, height: bitmap.height, data: context.getImageData(0, 0, bitmap.width, bitmap.height).data, previewUrl: canvas.toDataURL('image/png') };
 }
 
 function imageDataUrl(image) {
@@ -216,8 +259,8 @@ function updateLivePreview() {
   const grid = view.exportPng(state.grid, $('gridlines-input').checked);
   $('live-grid').src = grid;
   if (state.source && state.processedSource) {
-    $('live-original').src = imageDataUrl(state.processedSource);
-    $('live-original-label').textContent = '处理后的原图';
+    $('live-original').src = state.source.previewUrl ?? imageDataUrl(state.source);
+    $('live-original-label').textContent = '导入原图';
   } else {
     $('live-original').src = view.exportPng(state.grid, false);
     $('live-original-label').textContent = '空白画板';
@@ -250,28 +293,62 @@ async function regenerate() {
   const source = cropImageData(state.source.data, state.source.width, state.source.height, state.crop);
   const fitted = fitImageData(source, cols / rows, fit, transparent);
   const opaque = replaceTransparentPixels(fitted, transparent);
-  const resized = resampleImageData(opaque, Math.max(cols * 4, 64), Math.max(rows * 4, 64), resample);
-  state.processedSource = adjustImageData(resized, { brightness, contrast, saturation, temperature, hue });
-  const sampledGrid = imageDataToGrid(state.processedSource.data, state.processedSource.width, state.processedSource.height, rows, cols, mode, detail);
-  const palette = getBoardMode() === 'fixed40'
-    ? FIXED_40_PALETTE.map(hexToRgb)
-    : createGridPalette(sampledGrid.cells, resolvePaletteSize(paletteColors, rows, cols, simplify), state.processedSource, detail);
-  state.grid = simplifyGrid(mapGridToPalette(sampledGrid, palette, distance), simplify);
+  const direct = simplify === 'direct'; const lineart = simplify === 'lineart';
+  state.processedSource = adjustImageData(opaque, { brightness, contrast, saturation, temperature, hue });
+  const samplingSource = direct || lineart ? state.processedSource : resampleImageData(state.processedSource, Math.max(cols * 4, 64), Math.max(rows * 4, 64), resample);
+  const sampledGrid = lineart
+    ? imageDataToLineGrid(samplingSource.data, samplingSource.width, samplingSource.height, rows, cols)
+    : imageDataToGrid(samplingSource.data, samplingSource.width, samplingSource.height, rows, cols, mode, detail);
+  const requestedColors = paletteColors === 'original' ? null : resolvePaletteSize(paletteColors, rows, cols, simplify);
+  if (lineart) state.grid = getBoardMode() === 'fixed40'
+    ? mapGridToPalette(sampledGrid, enabledFixedPalette().map(hexToRgb), 'weighted-rgb')
+    : sampledGrid;
+  else if (direct && getBoardMode() === 'fixed40') {
+    const available = enabledFixedPalette(); const palette = requestedColors ? selectUsedPalette(sampledGrid, available, requestedColors) : available;
+    state.grid = mapGridToPalette(sampledGrid, palette.map(hexToRgb), 'weighted-rgb');
+  } else if (direct && requestedColors) {
+    const palette = createGridPalette(sampledGrid.cells, requestedColors, samplingSource, detail);
+    state.grid = mapGridToPalette(sampledGrid, palette, 'weighted-rgb');
+  } else if (direct) state.grid = sampledGrid;
+  else {
+    const palette = getBoardMode() === 'fixed40'
+      ? enabledFixedPalette().map(hexToRgb)
+      : createGridPalette(sampledGrid.cells, resolvePaletteSize(paletteColors, rows, cols, simplify), samplingSource, detail);
+    state.grid = simplifyGrid(mapGridToPalette(sampledGrid, palette, distance), simplify);
+  }
   state.history = new EditHistory(state.grid.cells); state.selected = null;
   if (getBoardMode() !== 'fixed40') state.palette = [...new Set(state.grid.cells)].map(hexToRgb);
   renderImagePalette(); redraw();
-  setStatus(`已生成 ${rows} × ${cols} 网格，使用 ${new Set(state.grid.cells).size} 种颜色${simplify === 'none' ? '' : '，已整理零散色块'}`);
+  setStatus(lineart
+    ? `已生成 ${rows} × ${cols} 黑白线稿，使用 ${new Set(state.grid.cells).size} 个灰阶颜色`
+    : direct
+    ? `已直接网格化为 ${rows} × ${cols}，使用 ${new Set(state.grid.cells).size} 种${getBoardMode() === 'fixed40' ? '固定色板' : ''}颜色`
+    : `已生成 ${rows} × ${cols} 网格，使用 ${new Set(state.grid.cells).size} 种颜色${simplify === 'none' ? '' : '，已整理零散色块'}`);
+}
+
+function updateProcessingControls() {
+  const simple = ['direct', 'lineart'].includes($('simplify-input').value);
+  for (const id of ['distance-input', 'resample-input', 'detail-input']) $(id).disabled = simple;
+  $('palette-colors-input').disabled = $('simplify-input').value === 'lineart';
+  $('palette-colors-custom').disabled = $('simplify-input').value === 'lineart';
+  $('sampling-input').disabled = $('simplify-input').value === 'lineart';
+  $('palette-colors-custom').hidden = $('palette-colors-input').value !== 'custom';
+}
+
+function normalizeCustomPaletteSize() {
+  const input = $('palette-colors-custom');
+  const parsed = Number.parseInt(input.value, 10);
+  input.value = String(Number.isFinite(parsed) ? Math.max(Number(input.min), Math.min(Number(input.max), parsed)) : 12);
 }
 
 function updateSelectedPaletteColor() {
   if (getBoardMode() === 'fixed40' || state.paletteSelection === null || !state.grid) return;
-  const color = getColorInputValue(); if (!validColor(color)) return;
-  const nextPalette = state.palette.map((rgb, index) => index === state.paletteSelection ? hexToRgb(color) : [...rgb]);
-  const nextGrid = mapGridToPalette(state.grid, nextPalette, getOptions().distance);
-  const changes = nextGrid.cells.flatMap((after, index) => after === state.grid.cells[index] ? [] : [{ index, before: state.grid.cells[index], after }]);
-  if (changes.length) { state.history.applyStroke(changes); state.grid.cells = state.history.cells; state.palette = nextPalette; redraw(); }
-  renderImagePalette([...new Set(state.grid.cells)].map(hexToRgb));
-  setStatus('已更新选中色板');
+  const color = getColorInputValue().toLowerCase(); if (!validColor(color)) return;
+  const previous = rgbToHex(state.palette[state.paletteSelection]); if (previous === color) return;
+  const changes = state.grid.cells.flatMap((before, index) => before.toLowerCase() === previous ? [{ index, before, after: color }] : []);
+  if (changes.length) { state.history.applyStroke(changes); state.grid.cells = state.history.cells; }
+  state.palette[state.paletteSelection] = hexToRgb(color);
+  redraw(); renderImagePalette(); setStatus(`已替换 ${changes.length} 个使用 ${previous.toUpperCase()} 的格子`);
 }
 
 function drawCrop() {
@@ -339,11 +416,49 @@ for (const id of ['sampling-input', 'palette-colors-input', 'detail-input', 'bri
 }
 document.querySelectorAll('input[name="board-mode"]').forEach((input) => input.addEventListener('change', () => {
   state.paletteSelection = null;
-  if (getBoardMode() === 'fixed40' && !FIXED_40_PALETTE.includes(getColorInputValue().toLowerCase())) updateColorUi(FIXED_40_PALETTE[0]);
-  renderImagePalette(); redraw(); if (state.source) scheduleRegenerate();
+  if (getBoardMode() === 'fixed40' && !enabledFixedPalette().includes(getColorInputValue().toLowerCase())) updateColorUi(enabledFixedPalette()[0]);
+  updateProcessingControls(); renderImagePalette(); redraw(); if (state.source) scheduleRegenerate();
 }));
+$('palette-manage-input').addEventListener('change', () => renderImagePalette());
+$('palette-edit-input').addEventListener('change', () => { state.paletteSelection = null; renderImagePalette(); });
+$('simplify-input').addEventListener('change', updateProcessingControls);
+$('palette-colors-input').addEventListener('change', updateProcessingControls);
+$('palette-colors-custom').addEventListener('input', scheduleRegenerate);
+$('palette-colors-custom').addEventListener('change', () => { normalizeCustomPaletteSize(); scheduleRegenerate(); });
+$('palette-colors-custom').addEventListener('blur', normalizeCustomPaletteSize);
 $('gridlines-input').addEventListener('change', () => redraw());
 $('zoom-input').addEventListener('input', () => { $('zoom-value').value = `${$('zoom-input').value} px`; redraw(false); });
+const canvasScroll = document.querySelector('.canvas-scroll');
+
+function isTextEntryTarget(target) {
+  return target instanceof Element && Boolean(target.closest('input, select, textarea, [contenteditable="true"]'));
+}
+
+function finishCanvasPan(event) {
+  if (!canvasPan || (event?.pointerId !== undefined && event.pointerId !== canvasPan.pointerId)) return;
+  if (canvasScroll.hasPointerCapture(canvasPan.pointerId)) canvasScroll.releasePointerCapture(canvasPan.pointerId);
+  canvasPan = null;
+  canvasScroll.classList.remove('is-panning');
+  canvasScroll.classList.toggle('is-pan-ready', spacePressed);
+}
+
+canvasScroll.addEventListener('pointerdown', (event) => {
+  if (event.button !== 1 && !(event.button === 0 && spacePressed)) return;
+  event.preventDefault(); event.stopPropagation();
+  canvasPan = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: canvasScroll.scrollLeft, top: canvasScroll.scrollTop };
+  canvasScroll.setPointerCapture(event.pointerId);
+  canvasScroll.classList.add('is-panning');
+}, { capture: true });
+canvasScroll.addEventListener('pointermove', (event) => {
+  if (!canvasPan || event.pointerId !== canvasPan.pointerId) return;
+  event.preventDefault(); event.stopPropagation();
+  canvasScroll.scrollLeft = canvasPan.left - (event.clientX - canvasPan.x);
+  canvasScroll.scrollTop = canvasPan.top - (event.clientY - canvasPan.y);
+}, { capture: true });
+canvasScroll.addEventListener('pointerup', finishCanvasPan, { capture: true });
+canvasScroll.addEventListener('pointercancel', finishCanvasPan, { capture: true });
+canvasScroll.addEventListener('auxclick', (event) => { if (event.button === 1) event.preventDefault(); });
+
 $('grid-canvas').addEventListener('wheel', (event) => {
   event.preventDefault();
   const zoom = $('zoom-input'); const previous = Number(zoom.value);
@@ -358,11 +473,12 @@ $('grid-canvas').addEventListener('wheel', (event) => {
 }, { passive: false });
 
 $('hue-input').oninput = () => { if (getBoardMode() === 'fixed40') return; const { saturation, brightness } = hexToHsb(getColorInputValue()); updateColorUi(hsbToHex(Number($('hue-input').value), saturation, brightness)); };
-const syncColorInput = (event) => updateColorUi(event.target.value);
-$('color-input').addEventListener('input', syncColorInput); $('color-input').addEventListener('change', syncColorInput);
+$('hue-input').addEventListener('change', updateSelectedPaletteColor);
+$('color-input').addEventListener('input', (event) => { updateColorUi(event.target.value); if (validColor(event.target.value)) updateSelectedPaletteColor(); });
+$('color-input').addEventListener('change', (event) => { updateColorUi(event.target.value); updateSelectedPaletteColor(); });
 $('color-square').onpointerdown = (event) => { $('color-square').setPointerCapture(event.pointerId); setColorFromPicker(event); };
 $('color-square').onpointermove = (event) => { if (event.buttons) setColorFromPicker(event); };
-$('update-palette-button').onclick = updateSelectedPaletteColor;
+$('color-square').onpointerup = updateSelectedPaletteColor;
 $('theme-toggle').onclick = () => {
   const dark = document.body.classList.toggle('is-dark');
   $('theme-toggle').setAttribute('aria-pressed', String(dark));
@@ -373,12 +489,43 @@ $('theme-toggle').onclick = () => {
 $('settings-open').onclick = () => $('settings-content').classList.toggle('is-open');
 $('settings-close').onclick = () => $('settings-content').classList.remove('is-open');
 $('grid-toggle').onclick = () => { $('gridlines-input').checked = !$('gridlines-input').checked; redraw(); };
-document.querySelectorAll('.edit-mode-button').forEach((button) => button.addEventListener('click', () => {
-  const input = document.querySelector(`input[name="edit-mode"][value="${button.dataset.editMode}"]`);
+
+function setEditMode(mode) {
+  const input = document.querySelector(`input[name="edit-mode"][value="${mode}"]`);
   if (!input) return;
   input.checked = true;
-  document.querySelectorAll('.edit-mode-button').forEach((item) => item.classList.toggle('is-active', item === button));
+  document.querySelectorAll('.edit-mode-button').forEach((item) => item.classList.toggle('is-active', item.dataset.editMode === mode));
+  $('preview-content').classList.toggle('is-eyedropper', mode === 'eyedropper');
+}
+
+document.querySelectorAll('.edit-mode-button').forEach((button) => button.addEventListener('click', () => {
+  setEditMode(button.dataset.editMode);
 }));
+document.querySelectorAll('input[name="edit-mode"]').forEach((input) => input.addEventListener('change', () => setEditMode(input.value)));
+
+function pickOriginalColor(event) {
+  if (getEditMode() !== 'eyedropper') return;
+  if (!state.source) { setStatus('请先导入图片后再从原图取色。'); return; }
+  const image = $('live-original'); const rect = image.getBoundingClientRect();
+  const contentLeft = rect.left + image.clientLeft; const contentTop = rect.top + image.clientTop;
+  const scale = Math.min(image.clientWidth / state.source.width, image.clientHeight / state.source.height);
+  const displayWidth = state.source.width * scale; const displayHeight = state.source.height * scale;
+  const left = contentLeft + (image.clientWidth - displayWidth) / 2; const top = contentTop + (image.clientHeight - displayHeight) / 2;
+  if (event.clientX < left || event.clientX >= left + displayWidth || event.clientY < top || event.clientY >= top + displayHeight) return;
+  const x = Math.min(state.source.width - 1, Math.floor((event.clientX - left) / displayWidth * state.source.width));
+  const y = Math.min(state.source.height - 1, Math.floor((event.clientY - top) / displayHeight * state.source.height));
+  const offset = (y * state.source.width + x) * 4;
+  if (state.source.data[offset + 3] === 0) { setStatus('该位置完全透明，请选择原图中的可见区域。'); return; }
+  const original = rgbToHex(Array.from(state.source.data.slice(offset, offset + 3)));
+  const color = getBoardMode() === 'fixed40'
+    ? mapGridToPalette({ rows: 1, cols: 1, cells: [original] }, enabledFixedPalette().map(hexToRgb), 'weighted-rgb').cells[0]
+    : original;
+  state.paletteSelection = null;
+  updateColorUi(color); renderImagePalette(); setEditMode('fill');
+  setStatus(getBoardMode() === 'fixed40' ? `已从原图取色 ${original.toUpperCase()}，匹配为固定色 ${color.toUpperCase()}` : `已从原图取色 ${color.toUpperCase()}`);
+}
+
+$('live-original').addEventListener('pointerdown', pickOriginalColor);
 
 $('crop-canvas').onpointerdown = (event) => {
   if (!state.source) return; const point = cropPoint(event); const crop = state.crop; const edge = .035;
@@ -405,19 +552,38 @@ $('crop-canvas').onpointermove = (event) => {
 $('crop-canvas').onpointerup = () => { cropDrag = null; };
 
 $('grid-canvas').onpointerdown = (event) => {
+  if (event.button !== 0 || spacePressed || canvasPan) return;
   const index = view.hitTest(event); if (index === null) return; const mode = getEditMode();
-  if (mode === 'eyedropper') { updateColorUi(state.grid.cells[index]); document.querySelector('input[name="edit-mode"][value="fill"]').checked = true; document.querySelectorAll('.edit-mode-button').forEach((item) => item.classList.toggle('is-active', item.dataset.editMode === 'fill')); state.selected = index; redraw(); return; }
+  if (mode === 'eyedropper') {
+    const color = state.grid.cells[index];
+    state.paletteSelection = null; state.selected = index;
+    updateColorUi(color); renderImagePalette(); setEditMode('fill'); redraw();
+    setStatus(`已从网格结果取色 ${color.toUpperCase()}`);
+    return;
+  }
   if (mode === 'select') { state.selected = index; redraw(false); return; }
   stroke = new Map(); $('grid-canvas').setPointerCapture(event.pointerId); paint(index);
 };
-$('grid-canvas').onpointermove = (event) => { if (!stroke) return; const index = view.hitTest(event); if (index !== null) paint(index); };
+$('grid-canvas').onpointermove = (event) => { if (!stroke || spacePressed || canvasPan) return; const index = view.hitTest(event); if (index !== null) paint(index); };
 $('grid-canvas').onpointerup = () => { if (!stroke) return; state.history.applyStroke([...stroke.values()]); state.grid.cells = state.history.cells; stroke = null; redraw(); };
 function paint(index) { if (stroke.has(index)) return; const after = getColorInputValue(); if (!validColor(after)) return; stroke.set(index, { index, before: state.grid.cells[index], after }); state.grid.cells[index] = after; state.selected = index; redraw(false); }
 $('undo-button').onclick = () => { if (!state.history) return; state.grid.cells = state.history.undo(); redraw(); };
 $('redo-button').onclick = () => { if (!state.history) return; state.grid.cells = state.history.redo(); redraw(); };
 $('export-button').onclick = () => { if (!state.grid) return; const link = document.createElement('a'); link.href = view.exportPng(state.grid, $('gridlines-input').checked); link.download = `${state.source?.name?.replace(/\.[^.]+$/, '') ?? 'pictile-artwork'}-grid.png`; link.click(); };
-document.addEventListener('keydown', (event) => { if (!event.ctrlKey || event.target.closest('input, select, textarea')) return; const key = event.key.toLowerCase(); if (key === 'z') { event.preventDefault(); state.grid.cells = event.shiftKey ? state.history.redo() : state.history.undo(); redraw(); } if (key === 'y') { event.preventDefault(); state.grid.cells = state.history.redo(); redraw(); } });
+document.addEventListener('keydown', (event) => {
+  if (event.code !== 'Space' || isTextEntryTarget(event.target)) return;
+  event.preventDefault();
+  if (spacePressed) return;
+  spacePressed = true; canvasScroll.classList.add('is-pan-ready');
+});
+document.addEventListener('keyup', (event) => {
+  if (event.code !== 'Space') return;
+  spacePressed = false;
+  if (!canvasPan) canvasScroll.classList.remove('is-pan-ready');
+});
+window.addEventListener('blur', () => { spacePressed = false; finishCanvasPan(); canvasScroll.classList.remove('is-pan-ready'); });
+document.addEventListener('keydown', (event) => { if (!event.ctrlKey || isTextEntryTarget(event.target)) return; const key = event.key.toLowerCase(); if (key === 'z') { event.preventDefault(); state.grid.cells = event.shiftKey ? state.history.redo() : state.history.undo(); redraw(); } if (key === 'y') { event.preventDefault(); state.grid.cells = state.history.redo(); redraw(); } });
 
 if (localStorage.getItem('pictile-theme') === 'dark') $('theme-toggle').click();
-buildQuickPalette(); updateColorUi('#e45a4f'); setupResizablePanels();
+buildQuickPalette(); updateColorUi('#e45a4f'); updateProcessingControls(); setupResizablePanels();
 resetBlankGrid('空白画板已就绪，选择颜色后直接开始绘制。');
